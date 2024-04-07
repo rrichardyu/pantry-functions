@@ -234,6 +234,9 @@ def generate_daily_visits(df, week_num):
         # Sort the 'average_distr' Series by the custom order
         average_distr = average_distr.reindex(custom_order)
 
+        # Drop all rows with NaN values
+        average_distr = average_distr.dropna()
+
         result = { str(k): v for k, v in average_distr.items() }
         result["title"] = f"Average Frequency of Food Pantry Visits for Last {str(week_num)} Weeks"
         return result

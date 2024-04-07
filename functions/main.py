@@ -2,7 +2,7 @@
 # To get started, simply uncomment the below code or create your own.
 # Deploy with `firebase deploy`
 
-from firebase_functions import https_fn
+from firebase_functions import https_fn, options
 from firebase_admin import initialize_app, storage, credentials
 
 import re
@@ -22,11 +22,11 @@ spreadsheet_url = os.environ.get("SPREADSHEET_URL")
 cred = credentials.Certificate("credentials.json")
 
 initialize_app(cred, {
-    "storageBucket": "testcalnourish.appspot.com"
+    "storageBucket": "prodcalnourish.appspot.com"
 })
 
-@https_fn.on_request()
-def fetch_upload_data(req: https_fn.Request) -> https_fn.Response:
+@https_fn.on_request(cors=options.CorsOptions(cors_origins="*", cors_methods=["get", "post"]))
+def fetch_upload_data(req: https_fn.CallableRequest):
     pattern = r'https://docs\.google\.com/spreadsheets/d/([a-zA-Z0-9-_]+)(/edit#gid=(\d+)|/edit.*)?'
 
     replacement = lambda m: f'https://docs.google.com/spreadsheets/d/{m.group(1)}/export?' + (f'gid={m.group(3)}&' if m.group(3) else '') + 'format=csv'
@@ -41,10 +41,12 @@ def fetch_upload_data(req: https_fn.Request) -> https_fn.Response:
     blob = bucket.blob(ref)
     blob.upload_from_string(df.to_csv())
 
-    return https_fn.Response(ref)
+    return {
+        "csv": ref
+    }
 
-@https_fn.on_request()
-def generate_item_visualization(req: https_fn.Request) -> https_fn.Response:
+@https_fn.on_request(cors=options.CorsOptions(cors_origins="*", cors_methods=["get", "post"]))
+def generate_item_visualization(req: https_fn.CallableRequest):
     qs = req.query_string.decode("utf-8")
     
     if not qs:
@@ -59,12 +61,12 @@ def generate_item_visualization(req: https_fn.Request) -> https_fn.Response:
 
     df = pd.read_csv(io.StringIO(contents.decode("utf-8")), sep=",")
 
-    data = str(generate_item(df, parsed_qs.get("item")[0], int(parsed_qs.get("week-history")[0])))
+    data = generate_item(df, parsed_qs.get("item")[0], int(parsed_qs.get("week-history")[0]))
 
-    return https_fn.Response(data)
+    return data
 
-@https_fn.on_request()
-def generate_hourly_visits_visualization(req: https_fn.Request) -> https_fn.Response:
+@https_fn.on_request(cors=options.CorsOptions(cors_origins="*", cors_methods=["get", "post"]))
+def generate_hourly_visits_visualization(req: https_fn.CallableRequest):
     qs = req.query_string.decode("utf-8")
     
     if not qs:
@@ -79,6 +81,26 @@ def generate_hourly_visits_visualization(req: https_fn.Request) -> https_fn.Resp
 
     df = pd.read_csv(io.StringIO(contents.decode("utf-8")), sep=",")
 
-    data = str(generate_hourly_visits(df, parsed_qs.get("on-weekday")[0], int(parsed_qs.get("week-history")[0])))
+    data = generate_hourly_visits(df, parsed_qs.get("on-weekday")[0], int(parsed_qs.get("week-history")[0]))
 
-    return https_fn.Response(data)
+    return data
+
+@https_fn.on_request(cors=options.CorsOptions(cors_origins="*", cors_methods=["get", "post"]))
+def generate_daily_visits_visualization(req: https_fn.CallableRequest):
+    qs = req.query_string.decode("utf-8")
+    
+    if not qs:
+        return https_fn.Response()
+
+    parsed_qs = dict(urllib.parse.parse_qs(qs))
+
+    bucket = storage.bucket()
+
+    blob = bucket.blob("pantry-data.csv")
+    contents = blob.download_as_string()
+
+    df = pd.read_csv(io.StringIO(contents.decode("utf-8")), sep=",")
+
+    data = generate_daily_visits(df, int(parsed_qs.get("week-history")[0]))
+
+    return data
